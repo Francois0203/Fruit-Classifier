@@ -103,18 +103,31 @@ else:
         pass
 
     # Build neural network and classification system
-    model = models.Sequential()
-    model.add(layers.Conv2D(32, (5, 5), strides=(2, 2), activation='relu', input_shape=(120, 320, 1)))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Flatten())
-    model.add(layers.Dense(128, activation='relu'))
-    model.add(layers.Dense(num_classes, activation='softmax'))
+    b_flag = False
+    choice = input("Please select the type of deep learning model you want to train (1 - CNN, 2 - , 3 - )")
 
-    model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['accuracy'])
+    while b_flag == False:
+        if choice == '1': # CNN Model
+            b_flag = True
+
+            model = models.Sequential()
+            model.add(layers.Conv2D(32, (5, 5), strides=(2, 2), activation='relu', input_shape=(120, 320, 1)))
+            model.add(layers.MaxPooling2D((2, 2)))
+            model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+            model.add(layers.MaxPooling2D((2, 2)))
+            model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+            model.add(layers.MaxPooling2D((2, 2)))
+            model.add(layers.Flatten())
+            model.add(layers.Dense(128, activation='relu'))
+            model.add(layers.Dense(num_classes, activation='softmax'))
+
+            model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['accuracy'])
+        elif choice == '2':
+            b_flag = True
+        elif choice == '3':
+            b_flag = True
+        else: # Invalid choice
+            print("Invalid choice, please enter 1, 2, or 3.")
 
     # Plot Training History
     def plot_history(history):
@@ -140,7 +153,7 @@ else:
 
         plt.show()
 
-    history = model.fit(x_train, y_train, epochs=20, batch_size=64, verbose=1, validation_data=(x_validate, y_validate))
+    history = model.fit(x_train, y_train, epochs=10, batch_size=64, verbose=1, validation_data=(x_validate, y_validate))
 
     plot_history(history)
 
