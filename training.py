@@ -8,6 +8,8 @@ import matplotlib.image as mpimg  # Plotting
 import pickle
 
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
+from sklearn.preprocessing import label_binarize
 
 import tensorflow as tf
 
@@ -104,7 +106,7 @@ else:
 
     # Build neural network and classification system
     b_flag = False
-    choice = input("Please select the type of deep learning model you want to train (1 - CNN, 2 - , 3 - )")
+    choice = input("Please select the type of deep learning model you want to train (1 - CNN, 2 - , 3 - ): ")
 
     while b_flag == False:
         if choice == '1': # CNN Model
@@ -170,3 +172,39 @@ else:
 
     [loss, acc] = model.evaluate(x_test, y_test, verbose=1)
     print("Accuracy:" + str(acc))
+
+# Predictions for metrics calculation
+y_pred_probs = model.predict(x_test)  # Predict probabilities
+y_pred = np.argmax(y_pred_probs, axis=1)  # Predicted classes
+
+# True classes
+y_true = np.argmax(y_test, axis=1)
+
+# Calculate metrics
+accuracy = accuracy_score(y_true, y_pred)
+precision = precision_score(y_true, y_pred, average='weighted')
+recall = recall_score(y_true, y_pred, average='weighted')
+f1 = f1_score(y_true, y_pred, average='weighted')
+
+# Calculate ROC curve and AUC
+y_true_bin = label_binarize(y_true, classes=range(num_classes))
+fpr, tpr, _ = roc_curve(y_true_bin.ravel(), y_pred_probs.ravel())
+roc_auc = auc(fpr, tpr)
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1-score: {f1:.4f}")
+print(f"ROC AUC: {roc_auc:.4f}")
+
+# Plot ROC curve
+plt.figure()
+plt.plot(fpr, tpr, color='blue', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
+plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic')
+plt.legend(loc='lower right')
+plt.show()
