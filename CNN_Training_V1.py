@@ -12,9 +12,10 @@ from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc, confusion_matrix, f1_score
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 
 # Paths
-data_dir = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\FruQ-multi'
+data_dir = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\FQ'
 model_save_path = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\Models\\fruit_classifier_model.h5'
 class_save_path = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\Models\\class_indices.npy'
 test_dir = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\TestImages'
@@ -54,7 +55,6 @@ def load_data(data_dir):
                 class_name = f'{fruit}_{condition}'
                 data.append((class_name, class_array))
                 print(f'Class: {class_name}, Number of Images: {len(images)}')
-    
     return data
 
 # Prepare image data generators
@@ -85,18 +85,29 @@ def prepare_data_generators(data, batch_size=32):
     train_images, val_images = images[:split_index], images[split_index:]
     train_labels, val_labels = one_hot_labels[:split_index], one_hot_labels[split_index:]
     
-    # Create ImageDataGenerators
-    datagen = ImageDataGenerator(rescale=1./255)
+    # Create ImageDataGenerators with data augmentation
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        rotation_range=40,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True,
+        fill_mode='nearest'
+    )
+    
+    val_datagen = ImageDataGenerator(rescale=1./255)
     
     # Ensure the data has 4D shape: (num_samples, height, width, channels)
-    train_generator = datagen.flow(
+    train_generator = train_datagen.flow(
         x=train_images,
         y=train_labels,
         batch_size=batch_size,
         shuffle=True
     )
     
-    val_generator = datagen.flow(
+    val_generator = val_datagen.flow(
         x=val_images,
         y=val_labels,
         batch_size=batch_size,
@@ -108,7 +119,8 @@ def prepare_data_generators(data, batch_size=32):
     
     print(f"Number of classes: {num_classes}")
     
-    return train_generator, val_generator, class_indices
+    return train_generator, val_generator, class_indices, label_encoder
+
 
 # Define and compile model
 def create_model(num_classes):
@@ -141,7 +153,7 @@ def save_model_and_classes(model, class_indices, model_save_path, class_save_pat
     np.save(class_save_path, class_indices)
 
 # Evaluate model
-def evaluate_model(model, val_generator):
+def evaluate_model(model, val_generator, label_encoder):
     # Evaluate the model
     val_steps = len(val_generator)  # Number of batches
     val_loss, val_accuracy = model.evaluate(val_generator, steps=val_steps)
@@ -157,7 +169,7 @@ def evaluate_model(model, val_generator):
         images, labels = batch
         predictions = model.predict(images, batch_size=val_generator.batch_size)
         y_true.extend(np.argmax(labels, axis=1))  # Convert one-hot to integer labels
-        y_pred_prob.extend(predictions)
+        y_pred_prob.extend(predictions)  # Collect probability estimates
         
         # Stop iteration when all data has been processed
         if len(y_true) >= val_steps * val_generator.batch_size:
@@ -166,11 +178,26 @@ def evaluate_model(model, val_generator):
     y_true = np.array(y_true)
     y_pred_prob = np.array(y_pred_prob)
     
+    # Compute and visualize confusion matrix
+    cm = confusion_matrix(y_true, np.argmax(y_pred_prob, axis=1))
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='coolwarm', cbar=True, 
+                xticklabels=label_encoder.get_vocabulary(), yticklabels=label_encoder.get_vocabulary(),
+                linewidths=0.5, linecolor='gray')
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.title('Confusion Matrix')
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    plt.tight_layout()
+    plt.show()
+    
     # Convert labels to binary format for ROC curve
     y_true_bin = label_binarize(y_true, classes=np.unique(y_true))
     
     # Compute ROC curve and AUC for each class
-    plt.figure()
+    plt.figure(figsize=(12, 8))
+    plt.style.use('dark_background')
     for i in range(y_true_bin.shape[1]):
         fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_pred_prob[:, i])
         roc_auc = auc(fpr, tpr)
@@ -183,6 +210,7 @@ def evaluate_model(model, val_generator):
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic for Each Class')
     plt.legend(loc='lower right')
+    plt.grid(True)
     plt.show()
 
 # Test model
@@ -223,14 +251,14 @@ def test_model(model, test_dir, class_indices):
 # Main execution
 if __name__ == "__main__":
     data = load_data(data_dir)
-    train_gen, val_gen, class_indices = prepare_data_generators(data)
+    train_gen, val_gen, class_indices, label_encoder = prepare_data_generators(data)
     num_classes = len(class_indices) - 1 # Use the length of class_indices
 
     model = create_model(num_classes)
-    history = train_model(model, train_gen, val_gen, epochs=20)
+    history = train_model(model, train_gen, val_gen, epochs=2)
     save_model_and_classes(model, class_indices, model_save_path, class_save_path)
 
-    evaluate_model(model, val_gen)
+    evaluate_model(model, val_gen, label_encoder)
     class_indices = np.load(class_save_path, allow_pickle=True).item()
-
+    
     test_model(model, test_dir, class_indices)
