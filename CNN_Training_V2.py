@@ -77,52 +77,52 @@ def load_data(base_dir):
 
 # Step 2: Build the CNN model
 def build_model(input_shape, num_classes):
-        model = Sequential([
-            # First Convolutional Block
-            Conv2D(64, (3, 3), activation='relu', input_shape=input_shape),
-            BatchNormalization(),
-            MaxPooling2D(pool_size=(2, 2)),
-            
-            # Second Convolutional Block
-            Conv2D(128, (3, 3), activation='relu'),
-            BatchNormalization(),
-            MaxPooling2D(pool_size=(2, 2)),
-            
-            # Third Convolutional Block
-            Conv2D(256, (3, 3), activation='relu'),
-            BatchNormalization(),
-            MaxPooling2D(pool_size=(2, 2)),
-            
-            # Fourth Convolutional Block
-            Conv2D(256, (3, 3), activation='relu'),
-            BatchNormalization(),
-            MaxPooling2D(pool_size=(2, 2)),
+    model = Sequential([
+        # First Convolutional Block
+        Conv2D(64, (3, 3), activation='relu', input_shape=input_shape),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
+        
+        # Second Convolutional Block
+        Conv2D(128, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
+        
+        # Third Convolutional Block
+        Conv2D(256, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
+        
+        # Fourth Convolutional Block
+        Conv2D(256, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
 
-            # Fifth Convolutional Block
-            Conv2D(512, (3, 3), activation='relu'),
-            BatchNormalization(),
-            MaxPooling2D(pool_size=(2, 2)),
+        # Fifth Convolutional Block
+        Conv2D(512, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
 
-            # Flatten and Fully Connected Layers
-            Flatten(),
-            
-            Dense(1024, activation='relu'),           
-            Dropout(0.5),
-            BatchNormalization(),
-            
-            Dense(512, activation='relu'),           
-            Dropout(0.5),
-            BatchNormalization(),
-            
-            Dense(256, activation='relu'),
-            Dropout(0.5),
-            BatchNormalization(),
-            
-            # Output Layer
-            Dense(num_classes, activation='softmax')
-        ])
+        # Flatten and Fully Connected Layers
+        Flatten(),
+        
+        Dense(1024, activation='relu'),           
+        Dropout(0.5),
+        BatchNormalization(),
+        
+        Dense(512, activation='relu'),           
+        Dropout(0.5),
+        BatchNormalization(),
+        
+        Dense(256, activation='relu'),
+        Dropout(0.5),
+        BatchNormalization(),
+        
+        # Output Layer
+        Dense(num_classes, activation='softmax')
+    ])
 
-        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 # Step 3: Train the model
