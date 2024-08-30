@@ -1,8 +1,6 @@
-opencv-python
-numpy
-pygame
-matplotlib
-pillow
-keras
-scikit-learn
 tensorflow
+scikit-learn
+matplotlib
+seaborn
+pandas
+numpy

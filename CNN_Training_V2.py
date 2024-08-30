@@ -1,40 +1,11 @@
-# Write a python script that reads images from files. The main file is called 'FruQ-multi' saved at 'C:\Personal Projects\Fruit-Classifier\Resources\FruQ-multi'. This folder has sub folders with fruit names. Then each fruit has 3 folders in it: Good, Mild, Rotten. These images should be extracted and saved into arrays which will be the different classes, for example: banana_mild, apple_good, etc. The arrays should then be used to train a CNN model, and save that model with its labels in a json file at the following location: 'C:\Personal Projects\Fruit-Classifier\Resources\Models'. The training process should choose the optimal hyperparameters to get the best performance. The model should flip the images during training as well.
-
-# The following info should be displayed during the whole process: F1 score, AUC score, ROC plot, confusion matrix, accuracy, etc. The info should be easy to read and the graphs should be beautiful. 
-
-# The file structure is as follows:
-
-# FruQ-multi
-# -----fruit name
-# ----------Good
-# ---------------images.png
-# ----------Mild
-# ---------------images.png
-# ----------Rotten
-# ---------------images.png
-
-# There should be 33 classes. The test images are stored at: 'C:\Personal Projects\Fruit-Classifier\Resources\TestImages'. 
-
-# Each task should be written in a separate algorithm so that i can easily edit it and modify paramteres.
-
-
-
-
-
-
-import os
-import json
-import numpy as np
-import tensorflow as tf
-import warnings
+import warnings, json, numpy as np, seaborn as sns, matplotlib.pyplot as plt
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, BatchNormalization, GlobalAveragePooling2D, LeakyReLU
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from sklearn.metrics import roc_auc_score, roc_curve, auc, classification_report, confusion_matrix, accuracy_score
+from tensorflow.keras.optimizers import RMSprop
+from sklearn.metrics import roc_curve, auc, classification_report, confusion_matrix, accuracy_score
 from sklearn.preprocessing import label_binarize
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Paths
 BASE_DIR = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\FruQ-multi Class Split'
@@ -46,7 +17,6 @@ LABELS_SAVE_PATH = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\Models\\
 warnings.filterwarnings("ignore", category=UserWarning, module='keras')
 warnings.filterwarnings("ignore", category=UserWarning, module='tensorflow')
 
-
 # Step 1: Load and preprocess the images
 def load_data(base_dir):
     datagen = ImageDataGenerator(
@@ -54,6 +24,10 @@ def load_data(base_dir):
         shear_range=0.2,
         zoom_range=0.2,
         horizontal_flip=True,
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        fill_mode='nearest',
         validation_split=0.2
     )
 
@@ -79,54 +53,64 @@ def load_data(base_dir):
 def build_model(input_shape, num_classes):
     model = Sequential([
         # First Convolutional Block
-        Conv2D(64, (3, 3), activation='relu', input_shape=input_shape),
+        Conv2D(32, (3, 3), padding='same', input_shape=input_shape),
+        LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
         
         # Second Convolutional Block
-        Conv2D(128, (3, 3), activation='relu'),
+        Conv2D(64, (3, 3), padding='same'),
+        LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
         
         # Third Convolutional Block
-        Conv2D(256, (3, 3), activation='relu'),
+        Conv2D(128, (3, 3), padding='same'),
+        LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
-        
+
         # Fourth Convolutional Block
-        Conv2D(256, (3, 3), activation='relu'),
+        Conv2D(256, (3, 3), padding='same'),
+        LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
 
         # Fifth Convolutional Block
-        Conv2D(512, (3, 3), activation='relu'),
+        Conv2D(512, (3, 3), padding='same'),
+        LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
 
-        # Flatten and Fully Connected Layers
-        Flatten(),
-        
-        Dense(1024, activation='relu'),           
+        # Global Average Pooling
+        GlobalAveragePooling2D(),
+
+        # Fully Connected Layers
+        Dense(512),
+        LeakyReLU(alpha=0.1),
         Dropout(0.5),
-        BatchNormalization(),
         
-        Dense(512, activation='relu'),           
+        Dense(256),
+        LeakyReLU(alpha=0.1),
         Dropout(0.5),
-        BatchNormalization(),
-        
-        Dense(256, activation='relu'),
-        Dropout(0.5),
-        BatchNormalization(),
-        
+
         # Output Layer
         Dense(num_classes, activation='softmax')
     ])
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    # optimizer = 'adam'
+    optimizer = RMSprop(learning_rate=1e-4)
+
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 # Step 3: Train the model
 def train_model(model, train_generator, validation_generator):
+    # Compute class weights
+    class_counts = np.bincount(train_generator.classes)
+    total_samples = float(sum(class_counts))
+    class_weights = {i: total_samples / count for i, count in enumerate(class_counts)}
+
     early_stop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
     checkpoint = ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True, verbose=1)
 
@@ -136,6 +120,7 @@ def train_model(model, train_generator, validation_generator):
         validation_data=validation_generator,
         validation_steps=validation_generator.samples // validation_generator.batch_size,
         epochs=50,
+        class_weight=class_weights,  # Add class weights to handle imbalance
         callbacks=[early_stop, checkpoint]
     )
     return history
