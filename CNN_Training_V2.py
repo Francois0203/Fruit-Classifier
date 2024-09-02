@@ -1,9 +1,9 @@
-import warnings, json, numpy as np, seaborn as sns, matplotlib.pyplot as plt
+import warnings, json, numpy as np, seaborn as sns, matplotlib.pyplot as plt, tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, BatchNormalization, GlobalAveragePooling2D, LeakyReLU
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, BatchNormalization, GlobalAveragePooling2D, LeakyReLU, Flatten
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.optimizers import Adam
 from sklearn.metrics import roc_curve, auc, classification_report, confusion_matrix, accuracy_score
 from sklearn.preprocessing import label_binarize
 
@@ -33,7 +33,7 @@ def load_data(base_dir):
 
     train_generator = datagen.flow_from_directory(
         base_dir,
-        target_size=(128, 128),
+        target_size=(150, 150),
         batch_size=32,
         class_mode='categorical',
         subset='training'
@@ -41,7 +41,7 @@ def load_data(base_dir):
 
     validation_generator = datagen.flow_from_directory(
         base_dir,
-        target_size=(128, 128),
+        target_size=(150, 150),
         batch_size=32,
         class_mode='categorical',
         subset='validation'
@@ -49,57 +49,31 @@ def load_data(base_dir):
 
     return train_generator, validation_generator
 
-# Step 2: Build the CNN model
+# Step 2: Build the CNN model with optimized hyperparameters
 def build_model(input_shape, num_classes):
     model = Sequential([
-        # First Convolutional Block
-        Conv2D(32, (3, 3), padding='same', input_shape=input_shape),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
+        # First Convolutional Block with optimized hyperparameters
+        Conv2D(64, (5, 5), activation='relu', input_shape=input_shape),
         MaxPooling2D(pool_size=(2, 2)),
         
-        # Second Convolutional Block
-        Conv2D(64, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
+        # Second Convolutional Block with optimized hyperparameters
+        Conv2D(128, (3, 3), activation='relu'),
         MaxPooling2D(pool_size=(2, 2)),
         
-        # Third Convolutional Block
-        Conv2D(128, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
+        # Third Convolutional Block with optimized hyperparameters
+        Conv2D(64, (5, 5), activation='relu'),
         MaxPooling2D(pool_size=(2, 2)),
 
-        # Fourth Convolutional Block
-        Conv2D(256, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
-        MaxPooling2D(pool_size=(2, 2)),
-
-        # Fifth Convolutional Block
-        Conv2D(512, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
-        MaxPooling2D(pool_size=(2, 2)),
-
-        # Global Average Pooling
-        GlobalAveragePooling2D(),
-
-        # Fully Connected Layers
-        Dense(512),
-        LeakyReLU(alpha=0.1),
+        # Flatten and Dense layers
+        Flatten(),
+        Dense(512, activation='relu'),
         Dropout(0.5),
         
-        Dense(256),
-        LeakyReLU(alpha=0.1),
-        Dropout(0.5),
-
         # Output Layer
         Dense(num_classes, activation='softmax')
     ])
 
-    # optimizer = 'adam'
-    optimizer = RMSprop(learning_rate=1e-4)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0008048)
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
@@ -127,6 +101,10 @@ def train_model(model, train_generator, validation_generator):
 
 # Step 4: Evaluate the model
 def evaluate_model(model, validation_generator):
+    val_loss, val_accuracy = model.evaluate(validation_generator)
+    print(f"Validation Accuracy: {val_accuracy:.4f}")
+    print(f"Validation Loss: {val_loss:.4f}")
+
     # Get the true labels
     Y_val = validation_generator.classes  # True labels
     
@@ -189,7 +167,7 @@ def save_model_and_labels(model, train_generator):
 # Step 6: Main function to run all steps
 def __main__():
     train_generator, validation_generator = load_data(BASE_DIR)
-    model = build_model(input_shape=(128, 128, 3), num_classes=len(train_generator.class_indices))
+    model = build_model(input_shape=(150, 150, 3), num_classes=len(train_generator.class_indices))
     history = train_model(model, train_generator, validation_generator)
     auc, accuracy = evaluate_model(model, validation_generator)
     save_model_and_labels(model, train_generator)
