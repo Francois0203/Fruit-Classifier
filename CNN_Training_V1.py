@@ -33,16 +33,16 @@ def load_data(base_dir):
 
     train_generator = datagen.flow_from_directory(
         base_dir,
-        target_size=(128, 128),
-        batch_size=32,
+        target_size=(256, 256),
+        batch_size=64,
         class_mode='categorical',
         subset='training'
     )
 
     validation_generator = datagen.flow_from_directory(
         base_dir,
-        target_size=(128, 128),
-        batch_size=32,
+        target_size=(256, 256),
+        batch_size=64,
         class_mode='categorical',
         subset='validation'
     )
@@ -53,39 +53,60 @@ def load_data(base_dir):
 def build_model(input_shape, num_classes):
     model = Sequential([
         # First Convolutional Block
-        Conv2D(32, (3, 3), padding='same', input_shape=input_shape),
+        Conv2D(64, (3, 3), padding='same', input_shape=input_shape),
         LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
-        
+        Dropout(0.3),
+
         # Second Convolutional Block
-        Conv2D(64, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
-        MaxPooling2D(pool_size=(2, 2)),
-        
-        # Third Convolutional Block
         Conv2D(128, (3, 3), padding='same'),
         LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
-
-        # Fourth Convolutional Block
+        Dropout(0.3),
+        
+        # Third Convolutional Block
         Conv2D(256, (3, 3), padding='same'),
         LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
+        Dropout(0.4),
 
-        # Fifth Convolutional Block
+        # Fourth Convolutional Block
         Conv2D(512, (3, 3), padding='same'),
         LeakyReLU(alpha=0.1),
         BatchNormalization(),
         MaxPooling2D(pool_size=(2, 2)),
+        Dropout(0.4),
+
+        # Fifth Convolutional Block
+        Conv2D(1024, (3, 3), padding='same'),
+        LeakyReLU(alpha=0.1),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
+        Dropout(0.5),
+
+        # Sixth Convolutional Block
+        Conv2D(1024, (3, 3), padding='same'),
+        LeakyReLU(alpha=0.1),
+        BatchNormalization(),
+        Dropout(0.5),
+
+        # Seventh Convolutional Block
+        Conv2D(2048, (3, 3), padding='same'),
+        LeakyReLU(alpha=0.1),
+        BatchNormalization(),
+        Dropout(0.5),
 
         # Global Average Pooling
         GlobalAveragePooling2D(),
 
         # Fully Connected Layers
+        Dense(1024),
+        LeakyReLU(alpha=0.1),
+        Dropout(0.5),
+
         Dense(512),
         LeakyReLU(alpha=0.1),
         Dropout(0.5),
@@ -94,12 +115,20 @@ def build_model(input_shape, num_classes):
         LeakyReLU(alpha=0.1),
         Dropout(0.5),
 
+        Dense(128),
+        LeakyReLU(alpha=0.1),
+        Dropout(0.5),
+
+        Dense(64),
+        LeakyReLU(alpha=0.1),
+        Dropout(0.5),
+
         # Output Layer
         Dense(num_classes, activation='softmax')
     ])
 
     # optimizer = 'adam'
-    optimizer = RMSprop(learning_rate=1e-4)
+    optimizer = RMSprop(learning_rate=0.001)
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     return model
@@ -111,7 +140,7 @@ def train_model(model, train_generator, validation_generator):
     total_samples = float(sum(class_counts))
     class_weights = {i: total_samples / count for i, count in enumerate(class_counts)}
 
-    early_stop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
+    early_stop = EarlyStopping(monitor='val_loss', patience=100, verbose=1, restore_best_weights=True)
     checkpoint = ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True, verbose=1)
 
     history = model.fit(
@@ -119,7 +148,7 @@ def train_model(model, train_generator, validation_generator):
         steps_per_epoch=train_generator.samples // train_generator.batch_size,
         validation_data=validation_generator,
         validation_steps=validation_generator.samples // validation_generator.batch_size,
-        epochs=50,
+        epochs=30,
         class_weight=class_weights,  # Add class weights to handle imbalance
         callbacks=[early_stop, checkpoint]
     )
@@ -173,8 +202,8 @@ def evaluate_model(model, validation_generator):
     
     # Calculate accuracy
     print("Accuracy Score:")
-    accuracy = accuracy_score(Y_val, Y_pred_classes)
-    print(f"Accuracy: {accuracy:.4f}")
+    accuracy = accuracy_score(Y_val, Y_pred_classes)*100
+    print(f"Accuracy: {accuracy:.4f}%")
 
     return auc_macro, accuracy
 
@@ -189,7 +218,7 @@ def save_model_and_labels(model, train_generator):
 # Step 6: Main function to run all steps
 def __main__():
     train_generator, validation_generator = load_data(BASE_DIR)
-    model = build_model(input_shape=(128, 128, 3), num_classes=len(train_generator.class_indices))
+    model = build_model(input_shape=(256, 256, 3), num_classes=len(train_generator.class_indices))
     history = train_model(model, train_generator, validation_generator)
     auc, accuracy = evaluate_model(model, validation_generator)
     save_model_and_labels(model, train_generator)
