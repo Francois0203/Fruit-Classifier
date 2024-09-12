@@ -1,197 +1,155 @@
-import warnings, json, numpy as np, seaborn as sns, matplotlib.pyplot as plt
+import os
+import json
+import numpy as np
+import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, BatchNormalization, GlobalAveragePooling2D, LeakyReLU
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.optimizers import RMSprop
-from sklearn.metrics import roc_curve, auc, classification_report, confusion_matrix, accuracy_score
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc, precision_recall_fscore_support, accuracy_score
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import label_binarize
 
-# Paths
-BASE_DIR = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\FruQ-multi Class Split'
-TEST_DIR = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\TestImages'
-MODEL_SAVE_PATH = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\Models\\fruit_classifier.keras'
-LABELS_SAVE_PATH = 'C:\\Personal Projects\\Fruit-Classifier\\Resources\\Models\\fruit_labels.json'
+SCRIPT_PATH = os.getcwd()
+MODEL_DIR = os.path.join(SCRIPT_PATH, "Resources", "Models")
+RESULTS_DIR = os.path.join(SCRIPT_PATH, "Resources", "Results")
+DATASET_DIR = os.path.join(SCRIPT_PATH, "Resources", "FruQ-multi Class Split")
 
-# Suppress specific warnings
-warnings.filterwarnings("ignore", category=UserWarning, module='keras')
-warnings.filterwarnings("ignore", category=UserWarning, module='tensorflow')
+print("\n")
+print("Script path: ", SCRIPT_PATH)
+print("Data set path: ", DATASET_DIR)
+print("Model path: ", MODEL_DIR)
+print("Results saved at: ", RESULTS_DIR)
+print("\n")
 
-# Step 1: Load and preprocess the images
-def load_data(base_dir):
-    datagen = ImageDataGenerator(
+def load_and_preprocess_data(dataset_dir):
+    #Data augmentation
+    train_datagen = ImageDataGenerator(
         rescale=1./255,
+        validation_split=0.2,  # 20% of data for validation
         shear_range=0.2,
-        zoom_range=0.2,
+        zoom_range=0.3,
         horizontal_flip=True,
+        rotation_range=30,
         width_shift_range=0.2,
         height_shift_range=0.2,
+        brightness_range=[0.8, 1.2],
         fill_mode='nearest',
-        validation_split=0.2
+        channel_shift_range=0.2  # Simulates color noise
     )
+    
+    validation_datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
 
-    train_generator = datagen.flow_from_directory(
-        base_dir,
-        target_size=(128, 128),
-        batch_size=16,
+    # Load training data 
+    train_generator = train_datagen.flow_from_directory(
+        directory=dataset_dir,
+        target_size=(150, 150),
+        batch_size=32,
         class_mode='categorical',
-        subset='training'
+        subset='training',
+        shuffle=True
     )
-
-    validation_generator = datagen.flow_from_directory(
-        base_dir,
-        target_size=(128, 128),
-        batch_size=16,
+    
+    # Load validation data
+    validation_generator = validation_datagen.flow_from_directory(
+        directory=dataset_dir,
+        target_size=(150, 150),
+        batch_size=32,
         class_mode='categorical',
-        subset='validation'
+        subset='validation',
+        shuffle=False
     )
 
+    # Save the class labels to a JSON file for later use
+    with open(os.path.join(MODEL_DIR, "class_labels.json"), 'w') as json_file:
+        json.dump(train_generator.class_indices, json_file)
+    
     return train_generator, validation_generator
 
-# Step 2: Build the CNN model
+#Moedl Architecture
 def build_model(input_shape, num_classes):
     model = Sequential([
-        # First Convolutional Block
-        Conv2D(32, (3, 3), padding='same', input_shape=input_shape),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
+        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
         MaxPooling2D(pool_size=(2, 2)),
         
-        # Second Convolutional Block
-        Conv2D(64, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
+        Conv2D(64, (3, 3), activation='relu'),
         MaxPooling2D(pool_size=(2, 2)),
         
-        # Third Convolutional Block
-        Conv2D(128, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
+        Conv2D(128, (3, 3), activation='relu'),
         MaxPooling2D(pool_size=(2, 2)),
-
-        # Fourth Convolutional Block
-        Conv2D(256, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
-        MaxPooling2D(pool_size=(2, 2)),
-
-        # Fifth Convolutional Block
-        Conv2D(512, (3, 3), padding='same'),
-        LeakyReLU(alpha=0.1),
-        BatchNormalization(),
-        MaxPooling2D(pool_size=(2, 2)),
-
-        # Global Average Pooling
-        GlobalAveragePooling2D(),
-
-        # Fully Connected Layers
-        Dense(512),
-        LeakyReLU(alpha=0.1),
+        
+        Flatten(),
+        Dense(512, activation='relu'),
         Dropout(0.5),
-        
-        Dense(256),
-        LeakyReLU(alpha=0.1),
-        Dropout(0.5),
-
-        # Output Layer
         Dense(num_classes, activation='softmax')
     ])
-
-    # optimizer = 'adam'
-    optimizer = RMSprop(learning_rate=1e-4)
-
-    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),  # Slower learning rate
+                loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
-# Step 3: Train the model
+#Training
 def train_model(model, train_generator, validation_generator):
-    # Compute class weights
-    class_counts = np.bincount(train_generator.classes)
-    total_samples = float(sum(class_counts))
-    class_weights = {i: total_samples / count for i, count in enumerate(class_counts)}
+    checkpoint = ModelCheckpoint(os.path.join(MODEL_DIR, "best_model.keras"), monitor='val_accuracy', save_best_only=True, mode='max')
+    
+    early_stop = EarlyStopping(monitor='val_loss', patience=10, mode='min', restore_best_weights=True)
 
-    early_stop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
-    checkpoint = ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True, verbose=1)
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-6, verbose=1)
 
     history = model.fit(
         train_generator,
-        steps_per_epoch=train_generator.samples // train_generator.batch_size,
-        validation_data=validation_generator,
-        validation_steps=validation_generator.samples // validation_generator.batch_size,
         epochs=50,
-        class_weight=class_weights,  # Add class weights to handle imbalance
-        callbacks=[early_stop, checkpoint]
+        validation_data=validation_generator,
+        callbacks=[checkpoint, early_stop, reduce_lr]
     )
+
+    # Plot accuracy vs epochs
+    plt.figure()
+    plt.plot(history.history['accuracy'], label='Training Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.title('Model Accuracy vs Epochs')
+    plt.legend(loc='lower right')
+    plt.savefig(os.path.join(RESULTS_DIR, "accuracy_vs_epochs.png"))
+
     return history
 
-# Step 4: Evaluate the model
+#Evaluation
 def evaluate_model(model, validation_generator):
-    # Get the true labels
-    Y_val = validation_generator.classes  # True labels
-    
-    # Predict the probabilities for each class
+    validation_generator.reset()
     Y_pred = model.predict(validation_generator)
+    y_pred = np.argmax(Y_pred, axis=1)
+    y_true = validation_generator.classes
     
-    # One-hot encode the true labels
-    num_classes = len(validation_generator.class_indices)
-    Y_val_one_hot = label_binarize(Y_val, classes=list(range(num_classes)))
-    
-    # Print classification report
-    print("Classification Report:")
-    Y_pred_classes = np.argmax(Y_pred, axis=1)
-    print(classification_report(Y_val, Y_pred_classes, labels=list(range(num_classes)), target_names=list(validation_generator.class_indices.keys())))
-    
-    # Print confusion matrix
-    print("Confusion Matrix:")
-    cm = confusion_matrix(Y_val, Y_pred_classes, labels=list(range(num_classes)))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=validation_generator.class_indices.keys(), yticklabels=validation_generator.class_indices.keys())
-    plt.show()
-    
-    # Calculate ROC AUC score for each class
-    print("ROC AUC Score:")
-    auc_scores = []
-    for i in range(Y_pred.shape[1]):
-        fpr, tpr, _ = roc_curve(Y_val_one_hot[:, i], Y_pred[:, i])
-        roc_auc = auc(fpr, tpr)
-        auc_scores.append(roc_auc)
-        plt.plot(fpr, tpr, label=f'Class {i} (AUC: {roc_auc:.2f})')
+    # Metrics
+    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='macro')
+    accuracy = accuracy_score(y_true, y_pred)
+    print(f"Overall Accuracy: {accuracy:.4f}")
+    print(f"Overall Precision: {precision:.4f}")
+    print(f"Overall Recall: {recall:.4f}")
+    print(f"Overall F1-Score: {f1:.4f}")
 
-    # Plotting the ROC curves
-    plt.plot([0, 1], [0, 1], 'k--')  # Diagonal line
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
+    y_true_binary = label_binarize(y_true, classes=np.arange(len(validation_generator.class_indices)))
+    fpr, tpr, _ = roc_curve(y_true_binary.ravel(), Y_pred.ravel())
+    roc_auc = auc(fpr, tpr)
+    print(f"Overall AUC: {roc_auc:.4f}")
+
+    plt.figure()
+    plt.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', linestyle='--')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('ROC Curve')
-    plt.legend(loc='lower right')
-    plt.show()
+    plt.title('Overall ROC Curve')
+    plt.legend(loc="lower right")
+    plt.savefig(os.path.join(RESULTS_DIR, "roc_curve.png"))
+
+train_generator, validation_generator = load_and_preprocess_data(DATASET_DIR)
     
-    # Calculate the macro average AUC
-    auc_macro = np.mean(auc_scores)
-    print(f"Macro AUC: {auc_macro:.4f}")
+input_shape = (150, 150, 3)
+num_classes = 33  
+model = build_model(input_shape, num_classes)
     
-    # Calculate accuracy
-    print("Accuracy Score:")
-    accuracy = accuracy_score(Y_val, Y_pred_classes)
-    print(f"Accuracy: {accuracy:.4f}")
-
-    return auc_macro, accuracy
-
-# Step 5: Save the model and labels
-def save_model_and_labels(model, train_generator):
-    model.save(MODEL_SAVE_PATH)
-    labels = {v: k for k, v in train_generator.class_indices.items()}
-    with open(LABELS_SAVE_PATH, 'w') as f:
-        json.dump(labels, f)
-    print(f"Model and labels saved.")
-
-# Step 6: Main function to run all steps
-def __main__():
-    train_generator, validation_generator = load_data(BASE_DIR)
-    model = build_model(input_shape=(128, 128, 3), num_classes=len(train_generator.class_indices))
-    history = train_model(model, train_generator, validation_generator)
-    auc, accuracy = evaluate_model(model, validation_generator)
-    save_model_and_labels(model, train_generator)
-
-if __name__ == "__main__":
-    __main__()
+history = train_model(model, train_generator, validation_generator)
+    
+evaluate_model(model, validation_generator)
